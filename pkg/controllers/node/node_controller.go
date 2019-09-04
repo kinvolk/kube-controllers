@@ -16,11 +16,13 @@ package node
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	uruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -82,6 +84,7 @@ func NewNodeController(ctx context.Context, k8sClientset *kubernetes.Clientset, 
 
 	// Setup event handlers
 	handlers := cache.ResourceEventHandlerFuncs{
+		AddFunc: nc.handleAdd,
 		DeleteFunc: func(obj interface{}) {
 			// Just kick controller to wake up and perform a sync. No need to bother what node it was
 			// as we sync everything.
@@ -112,6 +115,34 @@ func NewNodeController(ctx context.Context, k8sClientset *kubernetes.Clientset, 
 	}
 
 	return nc
+}
+
+func (c *NodeController) handleAdd(obj interface{}) {
+	object, ok := obj.(metav1.Object)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			uruntime.HandleError(fmt.Errorf("error decoding object, invalid type"))
+			return
+		}
+
+		object, ok := tombstone.Obj.(metav1.Object)
+		if !ok {
+			uruntime.HandleError(fmt.Errorf("error decoding object tombstone, invalid type"))
+			return
+		}
+
+		log.Infof("Recovered deleted object %q from tombstone", object.GetName())
+		return
+	}
+
+	log.Infof("Processing object: %s", object.GetName())
+	c.enqueue(object)
+}
+
+func (c *NodeController) enqueue(obj interface{}) {
+	// THIS WONT WORk
+	// c.rl.Add
 }
 
 // getK8sNodeName is a helper method that searches a calicoNode for its kubernetes nodeRef.
